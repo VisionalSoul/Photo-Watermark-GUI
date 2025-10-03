@@ -227,11 +227,17 @@ class WatermarkApp(QMainWindow):
         self.btn_select_watermark = QPushButton("选择水印图片")
         self.btn_select_watermark.clicked.connect(self.select_watermark_image)
         
+        # 取消选择水印图片
+        self.btn_clear_watermark = QPushButton("取消选择水印图片")
+        self.btn_clear_watermark.clicked.connect(self.clear_watermark_image)
+        self.btn_clear_watermark.setEnabled(False)  # 初始禁用，因为还没有选择图片
+        
         # 显示水印图片路径
         self.watermark_path_label = QLabel("未选择水印图片")
         self.watermark_path_label.setWordWrap(True)
         
         layout.addWidget(self.btn_select_watermark)
+        layout.addWidget(self.btn_clear_watermark)
         layout.addWidget(self.watermark_path_label)
         layout.addStretch()
     
@@ -716,9 +722,21 @@ class WatermarkApp(QMainWindow):
         if file:
             self.watermark_image_path = file
             self.watermark_path_label.setText(file)
+            self.btn_clear_watermark.setEnabled(True)  # 启用取消选择按钮
             self.watermark_type = "image"
             self.settings_tab.setCurrentIndex(1)  # 切换到图片水印选项卡
             self.update_preview()
+    
+    def clear_watermark_image(self):
+        """取消选择水印图片"""
+        self.watermark_image_path = ""
+        self.watermark_path_label.setText("未选择水印图片")
+        self.btn_clear_watermark.setEnabled(False)  # 禁用取消选择按钮
+        # 如果当前是图片水印类型，则切换到文本水印
+        if self.watermark_type == "image":
+            self.watermark_type = "text"
+            self.settings_tab.setCurrentIndex(0)  # 切换到文本水印选项卡
+        self.update_preview()
     
     def export_images(self):
         """导出图片"""
