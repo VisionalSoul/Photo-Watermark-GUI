@@ -45,12 +45,12 @@ class WatermarkApp(QMainWindow):
         self.watermark_type = "text"  # 默认水印类型
         self.watermark_text = "水印文字"  # 默认水印文本
         self.watermark_image_path = ""  # 水印图片路径
-        self.watermark_opacity = 50  # 默认透明度（0-100）
+        self.watermark_opacity = 100  # 默认透明度（0-100）
         self.watermark_position = (0.5, 0.5)  # 默认位置（中心点）
         self.watermark_size = 100  # 默认水印大小占原图百分比
         self.watermark_rotation = 0  # 默认旋转角度
         self.watermark_color = QColor(0, 0, 0, 128)  # 默认颜色（半透明黑色）
-        self.watermark_font = QFont("SimHei", 36)  # 默认字体
+        self.watermark_font = QFont("SimHei", 256)  # 默认字体
         self.is_dragging = False  # 是否正在拖拽水印
         self.drag_start_pos = QPoint()  # 拖拽起始位置
         
@@ -191,7 +191,7 @@ class WatermarkApp(QMainWindow):
         # 字号
         font_group_layout.addWidget(QLabel("字号:"), 0, 2)
         self.font_size_spin = QSpinBox()
-        self.font_size_spin.setRange(8, 120)
+        self.font_size_spin.setRange(8, 1024)
         self.font_size_spin.setValue(self.watermark_font.pointSize())
         self.font_size_spin.valueChanged.connect(self.update_font)
         font_group_layout.addWidget(self.font_size_spin, 0, 3)
@@ -508,9 +508,8 @@ class WatermarkApp(QMainWindow):
         if not text.strip():
             return image  # 如果文本为空，返回原图
         
-        # 计算字体大小（基于用户设置和图像尺寸）
-        base_size = min(image.width, image.height) * (self.watermark_size / 100)
-        font_size = max(8, min(120, int(base_size / 5)))  # 限制字体大小范围
+        # 使用用户在UI中设置的字体大小
+        font_size = max(8, min(1024, self.watermark_font.pointSize()))  # 限制字体大小范围
         
         # Windows系统中常见的中文字体路径
         chinese_fonts = [
