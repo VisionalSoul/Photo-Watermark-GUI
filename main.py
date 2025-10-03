@@ -54,14 +54,16 @@ class WatermarkApp(QMainWindow):
         self.is_dragging = False  # 是否正在拖拽水印
         self.drag_start_pos = QPoint()  # 拖拽起始位置
         
-        # 加载设置
+        # 初始化设置对象
         # 使用同目录下的配置文件存储设置，而不是注册表
         config_path = QDir.currentPath() + "/watermark_config.ini"
         self.settings = QSettings(config_path, QSettings.IniFormat)
-        self.load_settings()
         
         # 创建UI
         self.init_ui()
+        
+        # 加载设置并更新UI
+        self.load_settings()
     
     def init_ui(self):
         """初始化用户界面"""
@@ -96,6 +98,8 @@ class WatermarkApp(QMainWindow):
         self.image_list = QListWidget()
         self.image_list.setViewMode(QListWidget.IconMode)
         self.image_list.setIconSize(QSize(100, 100))
+        # 设置网格大小以确保所有项目对齐
+        self.image_list.setGridSize(QSize(120, 120))
         self.image_list.setResizeMode(QListWidget.Adjust)
         self.image_list.setMovement(QListWidget.Static)
         self.image_list.itemClicked.connect(self.on_image_selected)
@@ -104,9 +108,11 @@ class WatermarkApp(QMainWindow):
         self.image_list.setDragDropMode(QListWidget.DragDropMode.DropOnly)
         # 设置viewport接受拖放
         self.image_list.viewport().setAcceptDrops(True)
+        # 为image_list安装事件过滤器
+        self.image_list.viewport().installEventFilter(self)
         
         # 导出按钮
-        self.btn_export = QPushButton("导出所选图片")
+        self.btn_export = QPushButton("导出所有图片")
         self.btn_export.clicked.connect(self.export_images)
         self.btn_export.setDisabled(True)
         
@@ -1133,6 +1139,8 @@ class WatermarkApp(QMainWindow):
         
         # 更新图片水印设置
         self.watermark_path_label.setText(self.watermark_image_path)
+        # 根据是否存在水印图片路径启用或禁用取消按钮
+        self.btn_clear_watermark.setEnabled(bool(self.watermark_image_path))
         
         # 更新通用设置
         self.opacity_slider.setValue(self.watermark_opacity)
@@ -1174,6 +1182,9 @@ class WatermarkApp(QMainWindow):
                 self.watermark_font = QFont(font_family, font_size)
                 self.watermark_font.setBold(font_bold)
                 self.watermark_font.setItalic(font_italic)
+                
+            # 加载完设置后更新UI
+            self.update_ui_from_settings()
         except:
             # 如果加载失败，使用默认设置
             pass
@@ -1263,8 +1274,52 @@ class WatermarkApp(QMainWindow):
         else:
             super().dragMoveEvent(event)
     
+    def eventFilter(self, source, event):
+        """事件过滤器，处理图片列表的拖放事件"""
+        # 只处理image_list的viewport事件
+        if source == self.image_list.viewport():
+            if event.type() == event.DragEnter:
+                # 处理拖入事件
+                if event.mimeData().hasUrls():
+                    event.acceptProposedAction()
+                return True
+            elif event.type() == event.DragMove:
+                # 处理拖动移动事件
+                if event.mimeData().hasUrls():
+                    event.acceptProposedAction()
+                return True
+            elif event.type() == event.Drop:
+                # 处理拖放事件
+                if event.mimeData().hasUrls():
+                    # 获取拖放的文件路径
+                    files = []
+                    for url in event.mimeData().urls():
+                        file_path = url.toLocalFile()
+                        # 检查是否为文件且是支持的图片格式
+                        if os.path.isfile(file_path):
+                            _, ext = os.path.splitext(file_path)
+                            if ext.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']:
+                                files.append(file_path)
+                        # 检查是否为文件夹
+                        elif os.path.isdir(file_path):
+                            # 递归获取文件夹中所有支持的图片文件
+                            supported_formats = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']
+                            for root, _, filenames in os.walk(file_path):
+                                for filename in filenames:
+                                    if any(filename.lower().endswith(ext) for ext in supported_formats):
+                                        files.append(os.path.join(root, filename))
+                    
+                    # 添加图片
+                    if files:
+                        self.add_images(files)
+                    
+                    event.acceptProposedAction()
+                    return True
+        # 其他事件交给默认处理
+        return super().eventFilter(source, event)
+    
     def dropEvent(self, event):
-        """处理拖放事件"""
+        """处理主窗口的拖放事件"""
         if event.mimeData().hasUrls():
             # 获取拖放的文件路径
             files = []
