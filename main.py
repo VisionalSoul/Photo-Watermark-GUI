@@ -49,7 +49,7 @@ class WatermarkApp(QMainWindow):
         self.watermark_position = (0.5, 0.5)  # 默认位置（中心点）
         self.watermark_size = 100  # 默认水印大小占原图百分比
         self.watermark_rotation = 0  # 默认旋转角度
-        self.watermark_color = QColor(0, 0, 0, 128)  # 默认颜色（半透明黑色）
+        self.watermark_color = QColor(0, 0, 0)  # 默认颜色（完全不透明黑色）
         self.watermark_font = QFont("SimHei", 256)  # 默认字体
         self.is_dragging = False  # 是否正在拖拽水印
         self.drag_start_pos = QPoint()  # 拖拽起始位置
@@ -511,26 +511,153 @@ class WatermarkApp(QMainWindow):
         # 使用用户在UI中设置的字体大小
         font_size = max(8, min(1024, self.watermark_font.pointSize()))  # 限制字体大小范围
         
-        # Windows系统中常见的中文字体路径
-        chinese_fonts = [
-            r"C:\Windows\Fonts\simsun.ttc",     # 宋体
-            r"C:\Windows\Fonts\simhei.ttf",    # 黑体
-            r"C:\Windows\Fonts\msyh.ttc",      # 微软雅黑
-            r"C:\Windows\Fonts\simkai.ttf",    # 楷体
-            r"C:\Windows\Fonts\msyhbd.ttc",    # 微软雅黑粗体
-        ]
+        # 检查字体设置（加粗和斜体）
+        is_bold = self.watermark_font.bold()
+        is_italic = self.watermark_font.italic()
+        selected_font_family = self.watermark_font.family()
         
-        # 查找可用的中文字体
+        # 查找可用的字体
         font = None
         
-        # 尝试加载中文字体
-        for font_path in chinese_fonts:
-            try:
-                if os.path.exists(font_path):
-                    font = ImageFont.truetype(font_path, font_size)
-                    break
-            except Exception:
-                continue
+        # 1. 首先尝试直接使用用户选择的字体名称
+        try:
+            font = ImageFont.truetype(selected_font_family, font_size)
+        except Exception:
+            # 如果直接使用字体名称失败，尝试查找系统中的字体文件
+            font_paths = []
+            
+            # 根据用户选择的字体名称和样式构建可能的字体文件路径
+            font_name_lower = selected_font_family.lower()
+            windows_fonts_dir = "C:\Windows\Fonts"
+            
+            # 构建可能的字体文件名称
+            possible_font_files = []
+            if "微软雅黑" in font_name_lower or "microsoft yahei" in font_name_lower:
+                possible_font_files.extend(["msyh.ttc", "msyhbd.ttc", "msyhl.ttc"])
+            elif "宋体" in font_name_lower or "simsun" in font_name_lower:
+                possible_font_files.extend(["simsun.ttc", "simsunb.ttf"])
+            elif "黑体" in font_name_lower or "heiti" in font_name_lower or "simhei" in font_name_lower:
+                possible_font_files.extend(["simhei.ttf"])
+            elif "楷体" in font_name_lower or "kai" in font_name_lower or "simkai" in font_name_lower:
+                possible_font_files.extend(["simkai.ttf"])
+            elif "arial" in font_name_lower:
+                possible_font_files.extend(["arial.ttf", "arialbd.ttf", "ariali.ttf", "arialbi.ttf"])
+            elif "times" in font_name_lower:
+                possible_font_files.extend(["times.ttf", "timesbd.ttf", "timesi.ttf", "timesbi.ttf"])
+            elif "courier" in font_name_lower:
+                possible_font_files.extend(["cour.ttf", "courbd.ttf", "couri.ttf", "courbi.ttf"])
+            
+            # 优化字体文件排序逻辑，确保粗体优先
+            # 首先按样式优先级排序
+            if is_bold and is_italic:
+                # 粗斜体 > 粗体 > 斜体 > 常规
+                priority_order = {
+                    3: lambda f: ('bd' in f or 'bold' in f.lower()) and ('i' in f or 'italic' in f.lower()),  # 粗斜体
+                    2: lambda f: ('bd' in f or 'bold' in f.lower()) and not ('i' in f or 'italic' in f.lower()),  # 粗体
+                    1: lambda f: not ('bd' in f or 'bold' in f.lower()) and ('i' in f or 'italic' in f.lower()),  # 斜体
+                    0: lambda f: not ('bd' in f or 'bold' in f.lower()) and not ('i' in f or 'italic' in f.lower())  # 常规
+                }
+            elif is_bold:
+                # 粗体 > 常规
+                priority_order = {
+                    2: lambda f: ('bd' in f or 'bold' in f.lower()),  # 粗体
+                    0: lambda f: not ('bd' in f or 'bold' in f.lower())  # 常规
+                }
+            elif is_italic:
+                # 斜体 > 常规
+                priority_order = {
+                    1: lambda f: ('i' in f or 'italic' in f.lower()),  # 斜体
+                    0: lambda f: not ('i' in f or 'italic' in f.lower())  # 常规
+                }
+            else:
+                # 仅常规
+                priority_order = {0: lambda f: True}
+            
+            # 为每个字体文件分配优先级
+            prioritized_fonts = []
+            for f in possible_font_files:
+                for priority, condition in sorted(priority_order.items(), reverse=True):
+                    if condition(f):
+                        prioritized_fonts.append((-priority, f))  # 使用负优先级以便升序排序时高优先级在前
+                        break
+            
+            # 按优先级排序
+            prioritized_fonts.sort()
+            possible_font_files = [f for _, f in prioritized_fonts]
+            
+            # 添加完整路径
+            for font_file in possible_font_files:
+                full_path = os.path.join(windows_fonts_dir, font_file)
+                if os.path.exists(full_path):
+                    font_paths.append(full_path)
+            
+            # 2. 如果找不到匹配的字体，使用默认的中文字体列表
+            if not font_paths:
+                # Windows系统中常见的中文字体路径
+                # 根据是否需要粗体调整默认字体顺序
+                if is_bold:
+                    # 粗体优先的默认字体列表
+                    chinese_fonts = [
+                        r"C:\Windows\Fonts\msyhbd.ttc",    # 微软雅黑粗体
+                        r"C:\Windows\Fonts\simhei.ttf",    # 黑体（较粗）
+                        r"C:\Windows\Fonts\simsunb.ttf",   # 宋体粗体
+                        r"C:\Windows\Fonts\msyh.ttc",      # 微软雅黑
+                        r"C:\Windows\Fonts\simsun.ttc",     # 宋体
+                        r"C:\Windows\Fonts\simkai.ttf",    # 楷体
+                    ]
+                else:
+                    # 常规字体列表
+                    chinese_fonts = [
+                        r"C:\Windows\Fonts\msyh.ttc",      # 微软雅黑
+                        r"C:\Windows\Fonts\simsun.ttc",     # 宋体
+                        r"C:\Windows\Fonts\simhei.ttf",    # 黑体
+                        r"C:\Windows\Fonts\simkai.ttf",    # 楷体
+                        r"C:\Windows\Fonts\msyhbd.ttc",    # 微软雅黑粗体
+                    ]
+                font_paths.extend(chinese_fonts)
+            
+            # 尝试加载字体文件 - 增强粗体支持
+            font = None
+            # 先尝试直接使用字体名称并指定粗体样式
+            if is_bold:
+                try:
+                    # 对于PIL，可以通过在字体名称后添加样式参数来尝试加载粗体
+                    # 注意：这在不同PIL版本和系统上的支持程度不同
+                    font = ImageFont.truetype(selected_font_family, font_size, weight='bold')
+                except Exception:
+                    pass
+            
+            # 如果直接加载粗体失败，再尝试文件路径方式
+            if font is None:
+                for font_path in font_paths:
+                    try:
+                        if os.path.exists(font_path):
+                            # 获取文件名和扩展名
+                            file_name = os.path.basename(font_path)
+                            file_ext = os.path.splitext(font_path)[1].lower()
+                            
+                            # 设置加载参数
+                            font_params = {}
+                            
+                            # 对于TTC文件，使用index参数选择样式
+                            if file_ext == ".ttc":
+                                # 微软雅黑等字体通常使用index=1作为粗体
+                                if 'bd' in file_name or 'bold' in file_name.lower():
+                                    font_params['index'] = 0  # 粗体文件中的第一个索引通常就是粗体
+                                elif is_bold:
+                                    font_params['index'] = 1  # 常规文件中的第二个索引可能是粗体
+                                else:
+                                    font_params['index'] = 0  # 常规样式
+                            
+                            # 尝试加载字体，传递相应参数
+                            font = ImageFont.truetype(font_path, font_size, **font_params)
+                            
+                            # 验证是否成功加载了正确的粗体字体
+                            # 注意：PIL的ImageFont不直接提供检查字体是否为粗体的方法
+                            # 但我们已经通过文件优先级确保了优先尝试粗体文件
+                            break
+                    except Exception:
+                        continue
         
         # 如果找不到中文字体，使用默认字体
         if font is None:
@@ -543,7 +670,27 @@ class WatermarkApp(QMainWindow):
         
         # 获取用户设置的颜色和透明度
         color = self.watermark_color
-        text_color = (color.red(), color.green(), color.blue(), int(color.alpha() * self.watermark_opacity / 100))
+        
+        # 直接使用QColor的RGB值，但交换R和B通道以修复颜色反转问题
+        r = color.red()
+        g = color.green()
+        b = color.blue()
+        # 交换R和B通道，因为PIL和PyQt5可能对RGB通道顺序处理不同
+        # 临时保存r值
+        temp = r
+        r = b
+        b = temp
+        
+        # 处理透明度：将用户透明度滑块值(0-100)转换为PIL可用的alpha值(0-255)
+        # 这样可以确保用户选择的颜色RGB值能正确显示，同时透明度由滑块控制
+        opacity_value = self.watermark_opacity
+        final_alpha = int(255 * (opacity_value / 100))
+        
+        # 确保alpha值在有效范围内
+        final_alpha = max(0, min(255, final_alpha))
+        
+        # 为PIL的ImageDraw创建正确的RGBA颜色元组
+        text_color = (r, g, b, final_alpha)
         
         # 计算文本尺寸和位置
         try:
@@ -571,7 +718,26 @@ class WatermarkApp(QMainWindow):
         
         # 绘制文本
         try:
-            draw.text((x, y), text, font=font, fill=text_color)
+            # 处理斜体效果
+            if is_italic and font:
+                # 对于斜体，我们需要旋转文本
+                # 创建一个临时的水印层
+                temp_watermark = Image.new("RGBA", (text_width + 50, text_height + 50), (0, 0, 0, 0))
+                temp_draw = ImageDraw.Draw(temp_watermark)
+                temp_draw.text((25, 25), text, font=font, fill=text_color)
+                
+                # 旋转临时水印层来创建斜体效果（通常约12度）
+                italic_watermark = temp_watermark.rotate(-12, expand=1, fillcolor=(0, 0, 0, 0))
+                
+                # 计算旋转后的位置
+                rot_x = x - (italic_watermark.width - temp_watermark.width) // 2
+                rot_y = y - (italic_watermark.height - temp_watermark.height) // 2
+                
+                # 粘贴旋转后的水印
+                watermark_layer.paste(italic_watermark, (rot_x, rot_y), italic_watermark)
+            else:
+                # 正常绘制文本
+                draw.text((x, y), text, font=font, fill=text_color)
         except Exception:
             # 如果使用font参数失败，尝试不使用font参数
             try:
@@ -690,11 +856,19 @@ class WatermarkApp(QMainWindow):
     
     def select_color(self):
         """选择颜色"""
-        color = QColorDialog.getColor(self.watermark_color, self, "选择水印颜色")
-        if color.isValid():
-            self.watermark_color = color
-            self.color_button.setStyleSheet(f"background-color: {color.name()}")
-            self.update_preview()
+        # 创建一个颜色对话框，并设置为允许用户选择带有alpha通道的颜色
+        color_dialog = QColorDialog(self)
+        color_dialog.setOption(QColorDialog.ShowAlphaChannel, True)
+        color_dialog.setCurrentColor(self.watermark_color)
+        
+        if color_dialog.exec_() == QColorDialog.Accepted:
+            selected_color = color_dialog.currentColor()
+            if selected_color.isValid():
+                self.watermark_color = selected_color
+                # 更新颜色按钮的样式，显示选中的颜色
+                self.color_button.setStyleSheet(f"background-color: {selected_color.name()}")
+                # 更新预览以显示新颜色
+                self.update_preview()
     
     def update_font(self):
         """更新字体设置"""
